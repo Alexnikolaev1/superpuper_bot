@@ -41,5 +41,7 @@ async def safe_edit_text(message: "Message", text: str, **kwargs) -> None:
         raise
 
 
-def format_error(exc: Exception, max_len: int = 200) -> str:
+def format_error(exc: Exception, max_len: int = 300) -> str:
+    if isinstance(exc, RuntimeError):
+        return str(exc)[:max_len]
     return str(exc)[:max_len]

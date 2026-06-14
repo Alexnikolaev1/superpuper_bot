@@ -48,7 +48,7 @@ def image_ratio_menu(model: str) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="16:9", callback_data=f"ratio_{model}_1024x576"),
-            InlineKeyboardButton(text="4:5", callback_data=f"ratio_{model}_819x1024"),
+            InlineKeyboardButton(text="4:5", callback_data=f"ratio_{model}_832x1024"),
         ],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_image")],
     ])

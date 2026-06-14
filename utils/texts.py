@@ -47,5 +47,5 @@ RATIO_LABELS = {
     "1024x1024": "1:1 Квадрат",
     "576x1024": "9:16 Stories",
     "1024x576": "16:9 YouTube",
-    "819x1024": "4:5 Instagram",
+    "832x1024": "4:5 Instagram",
 }

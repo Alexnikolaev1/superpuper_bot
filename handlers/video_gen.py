@@ -22,7 +22,7 @@ async def cb_video_menu(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await call.message.edit_text(
         "🎬 <b>Генерация видео</b> (Hailuo/MiniMax)\n\n"
-        "⚠️ Видео генерируется 1–3 минуты — это нормально!\n\n"
+        "⚠️ Видео генерируется 3–10 минут — это нормально!\n\n"
         "Выбери режим:",
         reply_markup=video_menu(),
         parse_mode="HTML",
@@ -90,7 +90,7 @@ async def _make_progress_updater(status_msg: Message):
         nonlocal last_text
         if text != last_text:
             last_text = text
-            await safe_edit_text(status_msg, f"{text}\n⏳ Ожидай 1–3 минуты")
+            await safe_edit_text(status_msg, f"{text}\n⏳ Ожидай 3–10 минут")
 
     return on_progress
 
@@ -101,7 +101,7 @@ async def handle_t2v(message: Message, state: FSMContext) -> None:
         await message.answer("📝 Опиши сцену текстом.", reply_markup=cancel_kb())
         return
 
-    thinking_msg = await message.answer("🎬 Отправляю задачу в Hailuo...\n⏳ Ожидай 1–3 минуты")
+    thinking_msg = await message.answer("🎬 Отправляю задачу в Hailuo...\n⏳ Ожидай 3–10 минут")
 
     try:
         on_progress = await _make_progress_updater(thinking_msg)
@@ -158,7 +158,7 @@ async def handle_i2v_prompt(message: Message, state: FSMContext) -> None:
         await state.clear()
         return
 
-    thinking_msg = await message.answer("🎬 Создаю видео из изображения...\n⏳ Подожди 1–3 минуты")
+    thinking_msg = await message.answer("🎬 Создаю видео из изображения...\n⏳ Подожди 3–10 минут")
 
     try:
         on_progress = await _make_progress_updater(thinking_msg)

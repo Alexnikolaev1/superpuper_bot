@@ -1,6 +1,8 @@
 import base64
 import logging
 
+import httpx
+
 from config import config
 from services.http_client import request_with_retry
 
@@ -15,15 +17,54 @@ MODELS = {
 }
 
 IMAGE_MODELS = {
-    "flux_schnell": "black-forest-labs/FLUX.1-schnell-Free",
-    "flux_dev": "black-forest-labs/FLUX.1-dev",
+    "flux_schnell": "black-forest-labs/FLUX.1-schnell",
+    "flux_dev": "black-forest-labs/FLUX.2-dev",
     "sdxl": "stabilityai/stable-diffusion-xl-base-1.0",
+}
+
+IMAGE_STEPS = {
+    "flux_schnell": 4,
+    "flux_dev": 28,
+    "sdxl": 30,
 }
 
 HEADERS = {
     "Authorization": f"Bearer {config.TOGETHER_API_KEY}",
     "Content-Type": "application/json",
 }
+
+
+def _normalize_dimensions(width: int, height: int) -> tuple[int, int]:
+    """FLUX требует размеры кратные 64, в пределах 256–1024."""
+    def _snap(value: int) -> int:
+        value = max(256, min(1024, value))
+        return round(value / 64) * 64
+
+    return _snap(width), _snap(height)
+
+
+def _extract_image_bytes(data: dict) -> bytes:
+    items = data.get("data") or []
+    if not items:
+        raise RuntimeError(f"Together: empty image response: {data}")
+
+    item = items[0]
+    if item.get("b64_json"):
+        return base64.b64decode(item["b64_json"])
+
+    if item.get("url"):
+        import asyncio
+        from services.http_client import get_client
+
+        async def _download():
+            client = get_client()
+            resp = await client.get(item["url"], timeout=120)
+            resp.raise_for_status()
+            return resp.content
+
+        return asyncio.get_event_loop().run_until_complete(_download())
+
+    raise RuntimeError(f"Together: unexpected image format: {item}")
 
 
 async def chat_completion(
@@ -56,14 +97,11 @@ async def generate_image(
     model_key: str = "flux_schnell",
     width: int = 1024,
     height: int = 1024,
-    steps: int = 4,
+    steps: int | None = None,
 ) -> bytes:
     model = IMAGE_MODELS.get(model_key, IMAGE_MODELS["flux_schnell"])
-
-    if model_key == "flux_dev":
-        steps = 28
-    elif model_key == "sdxl":
-        steps = 30
+    width, height = _normalize_dimensions(width, height)
+    steps = steps or IMAGE_STEPS.get(model_key, 4)
 
     payload = {
         "model": model,
@@ -72,15 +110,26 @@ async def generate_image(
         "height": height,
         "steps": steps,
         "n": 1,
-        "response_format": "b64_json",
+        "response_format": "base64",
     }
-    resp = await request_with_retry(
-        "POST",
-        f"{TOGETHER_BASE}/images/generations",
-        headers=HEADERS,
-        json=payload,
-        timeout=120,
-    )
-    data = resp.json()
-    b64 = data["data"][0]["b64_json"]
-    return base64.b64decode(b64)
+
+    try:
+        resp = await request_with_retry(
+            "POST",
+            f"{TOGETHER_BASE}/images/generations",
+            headers=HEADERS,
+            json=payload,
+            timeout=120,
+        )
+        data = resp.json()
+        items = data.get("data") or []
+        if not items:
+            raise RuntimeError(f"Together: empty image response: {data}")
+        b64 = items[0].get("b64_json")
+        if not b64:
+            raise RuntimeError(f"Together: no image data: {items[0]}")
+        return base64.b64decode(b64)
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text[:300]
+        logger.error("Together image error %s: %s", exc.response.status_code, detail)
+        raise RuntimeError(f"Image API error: {detail}") from exc
