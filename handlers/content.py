@@ -4,7 +4,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from keyboards.main import cancel_kb, content_menu, result_actions
-from services import together_service
+from services import llm_service
 from utils.helpers import format_error, safe_edit_text, send_long_message
 from utils.prompts import SYSTEM_ASSISTANT, get_content_prompt
 from utils.storage import add_generation
@@ -38,7 +38,7 @@ class ContentStates(StatesGroup):
 
 async def _generate_content(content_type: str, topic: str) -> str:
     prompt = get_content_prompt(content_type, topic)
-    return await together_service.chat_completion(
+    return await llm_service.chat_completion(
         messages=[
             {"role": "system", "content": SYSTEM_ASSISTANT},
             {"role": "user", "content": prompt},

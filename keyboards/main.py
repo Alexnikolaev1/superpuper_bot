@@ -21,7 +21,7 @@ def main_menu() -> InlineKeyboardMarkup:
 def text_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🧠 DeepSeek V3", callback_data="text_deepseek"),
+            InlineKeyboardButton(text="🧠 DeepSeek V4 Pro", callback_data="text_deepseek"),
             InlineKeyboardButton(text="⚡ Llama 3.3 70B", callback_data="text_llama"),
         ],
         [InlineKeyboardButton(text="🆓 OpenRouter Free", callback_data="text_openrouter")],

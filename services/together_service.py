@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 TOGETHER_BASE = "https://api.together.xyz/v1"
 
 MODELS = {
-    "deepseek": "deepseek-ai/DeepSeek-V3",
+    "deepseek": "deepseek-ai/DeepSeek-V4-Pro",
     "llama": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
     "qwen": "Qwen/Qwen2.5-72B-Instruct-Turbo",
 }

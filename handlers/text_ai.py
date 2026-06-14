@@ -4,7 +4,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from keyboards.main import cancel_kb, result_actions, text_menu
-from services import openrouter_service, together_service
+from services import llm_service
 from utils.helpers import format_error, safe_edit_text, send_long_message
 from utils.prompts import SYSTEM_ASSISTANT
 from utils.storage import add_generation, add_message, get_conversation
@@ -18,7 +18,7 @@ class TextStates(StatesGroup):
 
 
 MODEL_LABELS = {
-    "text_deepseek": ("deepseek", "🧠 DeepSeek V3"),
+    "text_deepseek": ("deepseek", "🧠 DeepSeek V4 Pro"),
     "text_llama": ("llama", "⚡ Llama 3.3 70B"),
     "text_openrouter": ("openrouter", "🆓 OpenRouter Free"),
 }
@@ -75,10 +75,10 @@ async def handle_text_prompt(message: Message, state: FSMContext) -> None:
         user_id = message.from_user.id
         messages = _build_messages(user_id, message.text)
 
-        if model_key == "openrouter":
-            response = await openrouter_service.chat_completion(messages=messages, model_key="smart")
-        else:
-            response = await together_service.chat_completion(messages=messages, model_key=model_key)
+        response = await llm_service.chat_completion(
+            messages=messages,
+            model_key=model_key,
+        )
 
         add_message(user_id, "user", message.text)
         add_message(user_id, "assistant", response)

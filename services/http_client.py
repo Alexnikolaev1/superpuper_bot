@@ -30,7 +30,7 @@ async def request_with_retry(
     method: str,
     url: str,
     *,
-    max_retries: int = 3,
+    max_retries: int = 5,
     retry_statuses: frozenset[int] = frozenset({429, 500, 502, 503, 504}),
     **kwargs,
 ) -> httpx.Response:

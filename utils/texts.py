@@ -1,7 +1,7 @@
 WELCOME_TEXT = """🚀 <b>ContentBot Pro</b> — AI-комбайн для контента
 
 <b>Возможности:</b>
-✍️ <b>AI Текст</b> — DeepSeek V3, Llama 3.3, бесплатные модели
+✍️ <b>AI Текст</b> — DeepSeek V4 Pro, Llama 3.3, бесплатные модели
 🖼 <b>Изображения</b> — FLUX.1, SDXL в любом соотношении
 🎬 <b>Видео</b> — Hailuo: текст→видео и фото→видео
 📱 <b>Контент</b> — посты для Instagram, Telegram, X, LinkedIn
