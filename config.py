@@ -1,5 +1,10 @@
-from pydantic import Field
+import os
+import sys
+
+from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+REQUIRED_VARS = ("TELEGRAM_TOKEN", "TOGETHER_API_KEY", "OPENROUTER_API_KEY", "HAILUO_API_KEY")
 
 
 class Config(BaseSettings):
@@ -31,4 +36,23 @@ class Config(BaseSettings):
         return True if allowed is None else user_id in allowed
 
 
-config = Config()
+def _load_config() -> Config:
+    try:
+        return Config()
+    except ValidationError:
+        missing = [name for name in REQUIRED_VARS if not os.environ.get(name)]
+        print(
+            "\n❌ Бот не запущен: не заданы переменные окружения.\n"
+            f"   Отсутствуют: {', '.join(missing)}\n\n"
+            "   Railway → твой сервис → вкладка Variables → Add Variable:\n"
+            "   • TELEGRAM_TOKEN\n"
+            "   • TOGETHER_API_KEY\n"
+            "   • OPENROUTER_API_KEY\n"
+            "   • HAILUO_API_KEY\n\n"
+            "   После сохранения Railway перезапустит деплой автоматически.\n",
+            file=sys.stderr,
+        )
+        raise
+
+
+config = _load_config()
