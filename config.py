@@ -25,6 +25,7 @@ class Config(BaseSettings):
     MAX_CONVERSATION_MESSAGES: int = Field(default=20, ge=4, le=50)
     MAX_HISTORY_ITEMS: int = Field(default=50, ge=10, le=200)
     THROTTLE_RATE: float = Field(default=0.5, ge=0.1, le=5.0)
+    VIDEO_MAX_WAIT_SECONDS: int = Field(default=1800, ge=300, le=3600)
 
     def get_allowed_ids(self) -> set[int] | None:
         if not self.ALLOWED_USER_IDS:

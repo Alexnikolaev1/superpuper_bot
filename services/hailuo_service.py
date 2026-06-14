@@ -12,26 +12,42 @@ HAILUO_BASE = "https://api.minimax.io/v1"
 VIDEO_MODEL = "MiniMax-Hailuo-2.3-Fast"
 VIDEO_MODEL_I2V = "MiniMax-Hailuo-2.3-Fast"
 DEFAULT_RESOLUTION = "768P"
-MAX_WAIT_SECONDS = 600
-POLL_INTERVAL = 8
+MAX_WAIT_SECONDS = config.VIDEO_MAX_WAIT_SECONDS
+POLL_INTERVAL = 10
 
 HEADERS = {
     "Authorization": f"Bearer {config.HAILUO_API_KEY}",
     "Content-Type": "application/json",
 }
 
-ProgressCallback = Callable[[int, str], Awaitable[None]]
+ProgressCallback = Callable[[int, str, str], Awaitable[None]]
 
 _SUCCESS_STATUSES = {"success", "Success", "SUCCESS"}
 _FAIL_STATUSES = {"fail", "Fail", "Failed", "failed", "FAIL"}
 
 
-def _check_base_resp(data: dict) -> None:
+def _check_base_resp(data: dict, *, strict: bool = True) -> None:
     base = data.get("base_resp", {})
     code = base.get("status_code", 0)
-    if code != 0:
+    if code != 0 and strict:
         msg = base.get("status_msg", "unknown error")
         raise RuntimeError(f"MiniMax API error {code}: {msg}")
+
+
+def _status_message(status: str, elapsed: int) -> str:
+    if status == "Queueing":
+        return "🕐 В очереди на сервере MiniMax..."
+    if status == "Processing":
+        return "🎞 Рендеринг видео..."
+    if status == "Preparing":
+        return "🎬 Подготовка задачи..."
+    if elapsed < 60:
+        return "🎬 Запускаю генерацию..."
+    if elapsed < 300:
+        return "⏳ Ожидание рендеринга..."
+    if elapsed < 900:
+        return "⌛ Долгая очередь — это нормально для бесплатного tier..."
+    return "⌛ Ещё немного, видео почти готово..."
 
 
 async def text_to_video(
@@ -44,8 +60,10 @@ async def text_to_video(
         "prompt": prompt,
         "duration": duration,
         "resolution": DEFAULT_RESOLUTION,
+        "prompt_optimizer": True,
     }
     task_id = await _create_task(payload)
+    logger.info("MiniMax T2V task created: %s", task_id)
     return await _poll_video_task(task_id, on_progress=on_progress)
 
 
@@ -62,8 +80,10 @@ async def image_to_video(
         "prompt": prompt or "Smooth cinematic motion, high quality",
         "duration": duration,
         "resolution": DEFAULT_RESOLUTION,
+        "prompt_optimizer": True,
     }
     task_id = await _create_task(payload)
+    logger.info("MiniMax I2V task created: %s", task_id)
     return await _poll_video_task(task_id, on_progress=on_progress)
 
 
@@ -90,14 +110,9 @@ async def _poll_video_task(
 ) -> str:
     elapsed = 0
     client = get_client()
+    last_status = ""
 
-    while elapsed < max_wait:
-        await asyncio.sleep(POLL_INTERVAL)
-        elapsed += POLL_INTERVAL
-
-        if on_progress:
-            await on_progress(elapsed, _progress_message(elapsed))
-
+    while elapsed <= max_wait:
         resp = await client.get(
             f"{HAILUO_BASE}/query/video_generation",
             headers=HEADERS,
@@ -106,31 +121,37 @@ async def _poll_video_task(
         )
         resp.raise_for_status()
         data = resp.json()
-        _check_base_resp(data)
+        _check_base_resp(data, strict=False)
 
         status = str(data.get("status", "")).strip()
-        logger.info("MiniMax video task %s status: %s", task_id, status)
+        file_id = data.get("file_id")
 
-        if status in _SUCCESS_STATUSES:
-            file_id = data.get("file_id")
+        if status != last_status:
+            logger.info("MiniMax task %s: status=%s elapsed=%ss", task_id, status, elapsed)
+            last_status = status
+
+        if on_progress:
+            msg = _status_message(status, elapsed)
+            await on_progress(elapsed, status, msg)
+
+        if status in _SUCCESS_STATUSES or file_id:
             if not file_id:
-                raise RuntimeError(f"MiniMax: no file_id in response: {data}")
+                raise RuntimeError(f"MiniMax: success but no file_id: {data}")
             return await _get_video_url(file_id)
 
         if status in _FAIL_STATUSES:
             raise RuntimeError(f"Video generation failed: {data}")
 
-    raise TimeoutError(f"Video generation timed out after {max_wait // 60} minutes")
+        if elapsed >= max_wait:
+            break
 
+        await asyncio.sleep(POLL_INTERVAL)
+        elapsed += POLL_INTERVAL
 
-def _progress_message(elapsed: int) -> str:
-    if elapsed < 30:
-        return "🎬 Запускаю генерацию..."
-    if elapsed < 90:
-        return "⏳ Рендеринг сцены..."
-    if elapsed < 180:
-        return "🎞 Финальная обработка..."
-    return "⌛ Почти готово, подожди ещё немного..."
+    raise TimeoutError(
+        f"Видео не готово за {max_wait // 60} мин (статус: {last_status or 'unknown'}). "
+        "Попробуй позже — очередь MiniMax может быть длинной."
+    )
 
 
 async def _get_video_url(file_id: str) -> str:

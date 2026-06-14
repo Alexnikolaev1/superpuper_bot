@@ -1,3 +1,6 @@
+import asyncio
+import logging
+
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -7,6 +10,8 @@ from keyboards.main import back_to_main, cancel_kb, video_menu
 from services import hailuo_service
 from utils.helpers import format_error, safe_edit_text
 from utils.storage import add_generation, get_last_image
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -22,7 +27,7 @@ async def cb_video_menu(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await call.message.edit_text(
         "🎬 <b>Генерация видео</b> (Hailuo/MiniMax)\n\n"
-        "⚠️ Видео генерируется 3–10 минут — это нормально!\n\n"
+        "⚠️ Видео может генерироваться до 30 минут — придёт отдельным сообщением.\n\n"
         "Выбери режим:",
         reply_markup=video_menu(),
         parse_mode="HTML",
@@ -39,7 +44,7 @@ async def cb_t2v(call: CallbackQuery, state: FSMContext) -> None:
         "• Что происходит\n"
         "• Стиль (кинематографический, анимация, реализм)\n"
         "• Движение камеры\n\n"
-        "<i>Пример: Закат над горами, камера медленно движется вправо, кинематографический стиль</i>",
+        "<i>Пример: Закат над горами, камера медленно движется вправо</i>",
         reply_markup=cancel_kb(),
         parse_mode="HTML",
     )
@@ -83,16 +88,57 @@ async def cb_img2video(call: CallbackQuery, state: FSMContext) -> None:
     await call.answer()
 
 
-async def _make_progress_updater(status_msg: Message):
+def _make_progress_updater(status_msg: Message):
     last_text = ""
 
-    async def on_progress(_elapsed: int, text: str) -> None:
+    async def on_progress(_elapsed: int, status: str, text: str) -> None:
         nonlocal last_text
-        if text != last_text:
-            last_text = text
-            await safe_edit_text(status_msg, f"{text}\n⏳ Ожидай 3–10 минут")
+        display = f"{text}\n<i>Статус: {status or 'ожидание'}</i>"
+        if display != last_text:
+            last_text = display
+            await safe_edit_text(status_msg, display, parse_mode="HTML")
 
     return on_progress
+
+
+async def _run_video_job(
+    message: Message,
+    status_msg: Message,
+    *,
+    prompt: str,
+    gen_type: str,
+    photo_bytes: bytes | None = None,
+) -> None:
+    try:
+        on_progress = _make_progress_updater(status_msg)
+        if photo_bytes:
+            video_url = await hailuo_service.image_to_video(photo_bytes, prompt, on_progress=on_progress)
+        else:
+            video_url = await hailuo_service.text_to_video(prompt, on_progress=on_progress)
+
+        video_bytes = await hailuo_service.download_video(video_url)
+        add_generation(message.from_user.id, gen_type, prompt)
+
+        video_file = BufferedInputFile(video_bytes, filename="generated.mp4")
+        caption = (
+            f"✅ <b>Видео готово!</b>\n📝 {prompt[:100]}"
+            if gen_type == "video_t2v"
+            else "✅ <b>Видео готово!</b>"
+        )
+        await status_msg.delete()
+        await message.answer_video(
+            video_file,
+            caption=caption,
+            reply_markup=back_to_main(),
+            parse_mode="HTML",
+        )
+    except Exception as exc:
+        logger.exception("Video generation failed for user %s", message.from_user.id)
+        await safe_edit_text(
+            status_msg,
+            f"❌ Ошибка: {format_error(exc)}\n\nПопробуй позже или с другим описанием.",
+            reply_markup=cancel_kb(),
+        )
 
 
 @router.message(VideoStates.waiting_t2v_prompt)
@@ -101,30 +147,16 @@ async def handle_t2v(message: Message, state: FSMContext) -> None:
         await message.answer("📝 Опиши сцену текстом.", reply_markup=cancel_kb())
         return
 
-    thinking_msg = await message.answer("🎬 Отправляю задачу в Hailuo...\n⏳ Ожидай 3–10 минут")
-
-    try:
-        on_progress = await _make_progress_updater(thinking_msg)
-        video_url = await hailuo_service.text_to_video(message.text, on_progress=on_progress)
-        video_bytes = await hailuo_service.download_video(video_url)
-        add_generation(message.from_user.id, "video_t2v", message.text)
-
-        video_file = BufferedInputFile(video_bytes, filename="generated.mp4")
-        await thinking_msg.delete()
-        await message.answer_video(
-            video_file,
-            caption=f"✅ <b>Видео готово!</b>\n📝 {message.text[:100]}",
-            reply_markup=back_to_main(),
-            parse_mode="HTML",
-        )
-    except Exception as exc:
-        await safe_edit_text(
-            thinking_msg,
-            f"❌ Ошибка: {format_error(exc)}\n\nПопробуй с другим описанием.",
-            reply_markup=cancel_kb(),
-        )
-    finally:
-        await state.clear()
+    await state.clear()
+    status_msg = await message.answer(
+        "🎬 <b>Задача создана!</b>\n"
+        "Видео придёт отдельным сообщением.\n"
+        "⏳ Обычно 5–30 минут (зависит от очереди MiniMax).",
+        parse_mode="HTML",
+    )
+    asyncio.create_task(_run_video_job(
+        message, status_msg, prompt=message.text, gen_type="video_t2v",
+    ))
 
 
 @router.message(VideoStates.waiting_i2v_photo, F.photo)
@@ -158,27 +190,16 @@ async def handle_i2v_prompt(message: Message, state: FSMContext) -> None:
         await state.clear()
         return
 
-    thinking_msg = await message.answer("🎬 Создаю видео из изображения...\n⏳ Подожди 3–10 минут")
-
-    try:
-        on_progress = await _make_progress_updater(thinking_msg)
-        video_url = await hailuo_service.image_to_video(photo_bytes, message.text, on_progress=on_progress)
-        video_bytes = await hailuo_service.download_video(video_url)
-        add_generation(message.from_user.id, "video_i2v", message.text)
-
-        video_file = BufferedInputFile(video_bytes, filename="generated.mp4")
-        await thinking_msg.delete()
-        await message.answer_video(
-            video_file,
-            caption="✅ <b>Видео готово!</b>",
-            reply_markup=back_to_main(),
-            parse_mode="HTML",
-        )
-    except Exception as exc:
-        await safe_edit_text(
-            thinking_msg,
-            f"❌ Ошибка: {format_error(exc)}",
-            reply_markup=cancel_kb(),
-        )
-    finally:
-        await state.clear()
+    await state.clear()
+    status_msg = await message.answer(
+        "🎬 <b>Задача создана!</b>\n"
+        "Видео придёт отдельным сообщением.\n"
+        "⏳ Обычно 5–30 минут.",
+        parse_mode="HTML",
+    )
+    asyncio.create_task(_run_video_job(
+        message, status_msg,
+        prompt=message.text,
+        gen_type="video_i2v",
+        photo_bytes=photo_bytes,
+    ))
