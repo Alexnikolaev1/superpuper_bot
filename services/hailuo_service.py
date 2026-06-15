@@ -9,8 +9,8 @@ from services.http_client import get_client, request_with_retry
 logger = logging.getLogger(__name__)
 
 HAILUO_BASE = "https://api.minimax.io/v1"
-VIDEO_MODEL = "MiniMax-Hailuo-2.3-Fast"
-VIDEO_MODEL_I2V = "MiniMax-Hailuo-2.3-Fast"
+VIDEO_MODEL = "MiniMax-Hailuo-2.3"           # текст → видео
+VIDEO_MODEL_I2V = "MiniMax-Hailuo-2.3-Fast"  # фото → видео
 DEFAULT_RESOLUTION = "768P"
 MAX_WAIT_SECONDS = config.VIDEO_MAX_WAIT_SECONDS
 POLL_INTERVAL = 10
